@@ -1,0 +1,699 @@
+
+
+;︾︾︾︾︾︾︾︾︾︾︾︾︾︾︾︾︾︾︾
+; Computer Organisation and Assembly Language
+; End-Semester Project
+; BSCS-11C
+; Group members:
+;    Hamaz Hamza    | 365670
+;    Syed Hamza Ali | 396358
+;︽︽︽︽︽︽︽︽︽︽︽︽︽︽︽︽︽︽︽
+
+include irvine32.inc
+includelib user32.lib	
+
+;◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄[-Declarations-]►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►
+
+reposition macro x:req, y:req         				; Reposition cursor to x,y position
+	push edx
+	mov	dh, y
+	mov	dl, x
+	call Gotoxy
+	pop	edx
+endm
+
+
+print macro text:req								; Write string immediates
+	local string
+	.data
+		string byte text, 0
+	.code
+		push edx
+		mov	edx, offset string
+		call writeString
+		pop	edx
+endm
+
+
+printl macro buffer:req								; Print string variables
+	push edx
+	mov	edx, offset buffer
+	call writeString
+	pop	edx
+endm
+ 
+
+printIntExtended macro integer:req					; print integer values in 32-bit variables
+	push eax
+	mov	eax, integer
+	call writeInt
+	pop	eax
+endm
+
+
+printInt macro integer:req							; print integer values in non 32-bit variables
+	push eax
+	movzx eax, integer
+	call writeInt
+	pop	eax
+endm
+
+
+setColor macro color:req							; sets the color of any text that is printed after this macro is called
+	local next, next1, next2, next3, next4, return  ; takes an integer argument to specify which color
+	push eax										; 0 - white
+	push bx											; 1 - red
+	mov bl, color									; 2 - yellow
+	mov eax, (black * 16)							; 3 - green
+													; 4 - blue
+	cmp bl, 0										; 5 - cyan
+	jne next
+	add eax, white
+	call SetTextColor
+	jmp return
+
+	next:
+	cmp bl, 1
+	jne next1
+	add eax, red
+	call SetTextColor
+	jmp return
+
+	next1:
+	cmp bl, 2
+	jne next2
+	add eax, magenta
+	inc eax
+	call SetTextColor
+	jmp return
+
+	next2:
+	cmp bl, 3
+	jne next3
+	add eax, lightGreen
+	call SetTextColor
+	jmp return
+
+	next3:
+	cmp bl, 4
+	jne next4
+	add eax, blue
+	call SetTextColor
+
+	next4:
+	cmp bl, 5
+	jne return
+	add eax, cyan
+	call SetTextColor
+
+	return:
+	pop bx
+	pop eax
+endm
+
+
+vector struct										; Struct used to keep track of positions easily
+    x BYTE 0
+    y BYTE 0
+vector ends
+
+
+GetKeyState proto nVirtKey:dword					; must be declared to use the getkeystate function
+
+;◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄[-End-]►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►
+
+.data
+;◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄[-Variables & Constants-]►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►
+
+titleScreen byte  " --------------------------------------------------------------------------- ",0
+titleSize = ($ - titleScreen)
+	    byte  "|   _____                        _____                     _                |",0
+        byte  "|  / ____|                      |_   _|                   | |               |",0
+	    byte  "| | (___  _ __   __ _  ___ ___    | |  _ ____   ____ _  __| | ___ _ __ ___  |",0
+	    byte  "|  \___ \|  _ \ / _  |/ __/ _ \   | | |  _ \ \ / / _  |/ _  |/ _ \  __/ __| |",0
+	    byte  "|  ____) | |_) | (_| | (_|  __/  _| |_| | | \ V / (_| | (_| |  __/ |  \__ \ |",0
+	    byte  "| |_____/|  __/ \____|\___\___| |_____|_| |_|\_/ \____|\____|\___|_|  |___/ |",0
+	    byte  "|        | |                                                                |",0
+	    byte  "|        |_|                                                                |",0
+	    byte  "|                           [Press Enter to Start]                          |",0
+	    byte  " --------------------------------------------------------------------------- ",0
+
+
+gameHwall byte " ------------------------------ ",0
+gameVwall byte "|                              |",0
+gameWidth byte 30
+gameHeight byte 28
+panelWidth byte 20
+panelHwall byte "-------------------- ",0
+
+
+leftArrow = 25h
+rightArrow = 27h
+space = 20h
+
+
+lives byte 3
+score dword 0
+time dword 0
+timeCounter byte 0
+
+
+shipChar byte "<^>",0
+currentX byte 15
+
+
+bulletChar = '|'
+bullets vector 10 DUP(<0,0>) ; array contains coordinates of each bullet
+bulletCount byte 0
+bulletCoolDown byte 3
+
+
+aliens vector 10 DUP(<0,0>) ; array contains coordinates of each alien
+alienCount byte 0
+alienChar = 'O'
+alienCoolDown byte 5
+alienMoveCoolDown byte 5
+
+;◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄[-End-]►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►
+
+.code
+Main proc
+;◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄[-Main Code-]►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►
+
+call Randomize      		; randomize seed for random number generator
+call drawTitleScreen
+call readint 				; await enter key press
+call clrscr
+
+gameLoop:
+	call drawGameScreen
+	call drawSidePanel
+	call drawEntities
+	call updateEntities
+
+	reposition 0, 0
+
+	mov eax, 100
+	call delay
+	call clrscr
+
+	inc timeCounter
+	mov al, timeCounter
+	cmp al, 10
+	jne gameLoop
+
+	mov timeCounter, 0
+	inc time
+	jmp gameLoop
+
+;◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄[-End-]►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►
+call crlf
+exit
+;◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄[-Procedures-]►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►
+
+;--------------------------------------------------------//
+drawTitleScreen proc;-----《 Draw the title screen 》-----//
+	setColor 3
+	mov edx, offset titleScreen
+	mov ecx, 11
+
+	titleLoop:
+		call writestring
+		call crlf
+		add edx, titleSize
+		loop titleLoop
+	ret
+drawTitleScreen endp;-----------------------------------\\
+;--------------------------------------------------------\\
+
+
+;---------------------------------------------------------//
+drawGameScreen proc;-----《 Draw the main game area 》-----//
+	setColor 0
+	printl gameHwall
+	call crlf
+
+	movzx ecx, gameHeight
+	sub ecx, 2
+	screenLoop:
+		printl gameVwall
+		call crlf
+		loop screenLoop
+
+	printl gameHwall
+	ret
+drawGameScreen endp;------------------------------------\\
+;--------------------------------------------------------\\
+
+
+;----------------------------------------------------------------------//
+drawSidePanel proc;-----《 Draw the instructions and stats panel 》-----//
+	mov al, gameWidth
+	add al, 2
+
+	setColor 0
+	reposition al, 0
+	printl panelHwall
+
+	setColor 4
+	reposition al, 1
+	print "      Controls"
+	reposition al, 3
+	print "Move using left and"
+	reposition al, 4
+	print "right arrow keys"
+	reposition al, 6
+	print "Press space to shoot"
+
+	setColor 0
+	reposition al, 8
+	printl panelHwall
+
+	setColor 5
+	reposition al, 9
+	print "    Instructions"
+	reposition al, 11
+	print "Shoot the incoming"
+	reposition al, 12
+	print "aliens and don't"
+	reposition al, 13
+	print "let them reach the"
+	reposition al, 14
+	print "bottom."
+
+	setColor 0
+	reposition al, 16
+	printl panelHwall
+
+	setColor 2
+	reposition al, 17
+	print "       Stats"
+	reposition al, 19
+	print "Lives: "
+	printInt lives
+	reposition al, 21
+	print "Score: "
+	printIntExtended score
+	reposition al, 23
+	print "Time: "
+	printIntExtended time
+
+	setColor 0
+	mov bl, gameHeight
+	dec bl
+	reposition al, bl
+	printl panelHwall
+
+	; Draw right side vertical walls
+
+	mov al, gameWidth
+	add al, panelWidth
+	add al, 2
+	mov bl, 1
+	movzx ecx, gameHeight
+	sub ecx, 2
+	looop:
+		reposition al, bl
+		print "|"
+		inc bl
+		loop looop
+	ret
+drawSidePanel endp;---------------------------------------------------\\
+;----------------------------------------------------------------------\\
+
+
+;-----------------------------------------------------------------------------//
+drawEntities proc;-----《 Draw the game entities: ship, bullets, aliens 》-----//
+	call drawShip
+	call drawBullets
+	call drawAliens
+
+	ret
+drawEntities endp;----------------------------------------------------------\\
+;----------------------------------------------------------------------------\\
+
+
+;-----------------------------------------//
+drawAliens proc;-----《 Draw aliens 》-----//
+	setColor 0
+	movzx ecx, alienCount
+	cmp ecx, 0
+	jne draw
+	ret
+
+	draw:
+		mov ebx, ecx
+		dec ebx
+		reposition aliens[vector * ebx].x, aliens[vector * ebx].y
+		print alienChar
+		loop draw
+
+	ret
+drawAliens endp;-------------------------\\
+;-----------------------------------------\\
+
+
+;--------------------------------------------------//
+drawShip proc;-----《 Draw the player's ship 》-----//
+	mov al, currentX
+	dec al
+	reposition al, 26			; game height - 2
+	setColor 3
+	printl shipChar
+
+	ret
+drawShip endp;------------------------------------\\
+;--------------------------------------------------\\
+
+
+;------------------------------------------------------//
+drawBullets proc;-----《 Draw the ship's bullets 》-----//
+	setColor 1
+	movzx ecx, bulletCount
+	cmp ecx, 0
+	jne draw
+	ret
+
+	draw:
+		mov ebx, ecx
+		dec ebx
+		reposition bullets[vector * ebx].x, bullets[vector * ebx].y
+		print bulletChar
+		loop draw
+
+	ret
+drawBullets endp;-------------------------------------\\
+;------------------------------------------------------\\
+
+
+;----------------------------------------------------------//
+updateEntities proc;-----《 Update the game entities 》-----//
+	call updateShip
+	call updateBullets
+	call updateAliens
+	call checkBulletAlienCollision
+
+	ret
+updateEntities endp;--------------------------------------\\
+;----------------------------------------------------------\\
+
+
+;----------------------------------------------------//
+updateShip proc;-----《 Move the player's ship 》-----//
+
+	movzx eax, lives
+	cmp eax, 0
+	jne continue
+	call drawGameOverScreen
+	
+	continue:
+    mov eax, 0
+    invoke GetKeyState, leftArrow			
+    cmp ah, 0
+	je checkRightArrow
+
+	mov al, currentX
+	cmp al, 2
+	je checkRightArrow
+	dec currentX
+
+	checkRightArrow:
+		mov eax, 0
+        	invoke GetKeyState, rightArrow	
+        	cmp ah, 0
+		je return
+
+		mov al, currentX
+		cmp al, 29		; game width - 1
+		je return
+		inc currentX
+
+	return:
+	ret
+updateShip endp;------------------------------------\\
+;----------------------------------------------------\\
+
+
+;------------------------------------------------------------------//
+updateBullets proc;-----《 Spawn and move the ship's bullets 》-----//
+	invoke GetKeyState, space
+	cmp ah, 0
+	je decY			; if space not pressed: go to decY label
+
+	mov bl, bulletCoolDown
+	cmp bl, 0		; if coolDown has not ended: go to decY label
+	jne decY
+	
+	movzx ecx, bulletCount
+	mov bl, currentX		; otherwise add new bullet and start coolDown timer
+	mov bullets[vector*ecx].x, bl
+	mov bullets[vector*ecx].y, 25	; game height - 3
+	inc bulletCount
+	mov bulletCoolDown, 3		; reset cooldown
+	jmp doNotDecrementCoolDown
+
+	decY:
+		mov bl, bulletCoolDown
+		cmp bl, 0
+		je doNotDecrementCoolDown
+		dec bulletCoolDown
+
+		doNotDecrementCoolDown:
+			movzx ecx, bulletCount
+			cmp ecx, 0
+			jne loopBullets
+			ret
+
+			loopBullets:
+				mov ebx, ecx
+				dec ebx
+				mov al, bullets[vector * ebx].y
+
+				cmp al, 1
+				jne decrement
+				mov esi, 0
+				call shiftDownBullets
+				ret
+
+				decrement:
+					dec al
+					mov bullets[vector * ebx].y, al
+					loop loopBullets
+
+	ret
+updateBullets endp;-----------------------------------------------\\
+;------------------------------------------------------------------\\
+
+
+;---------------------------------------------------------//
+updateAliens proc;-----《 Spawn and move the aliens 》-----//
+	movzx edx, alienCoolDown
+	cmp edx, 0
+	jne checkMoveCoolDown
+	call spawnAlien
+	mov alienCoolDown, 5
+	ret
+	
+	checkMoveCoolDown:
+		movzx ecx, alienMoveCoolDown
+		cmp ecx, 0
+		je incrementY
+		dec alienMoveCoolDown
+		ret
+
+	incrementY:
+		mov alienMoveCoolDown, 3
+		dec alienCoolDown
+		movzx ecx, alienCount
+		cmp ecx, 0
+		jne loopAliens
+		ret
+
+		loopAliens:
+			mov ebx, ecx
+			dec ebx
+			mov al, aliens[vector * ebx].y
+
+			cmp al, 26		; game height - 2
+			jne increment
+			dec lives
+			mov edi, 0
+			call shiftDownAliens
+			ret			
+
+			increment:
+				inc al
+				mov aliens[vector * ebx].y, al
+				loop loopAliens
+	ret
+updateAliens endp;---------------------------------------\\
+;---------------------------------------------------------\\
+
+
+;-----------------------------------------------------------------//
+spawnAlien proc;-----《 Spawn an alien at a random location 》-----// 
+	mov eax, 28 			; game width - 2
+	call randomRange		; generate a random int from 0-27 
+	add eax, 2  			; number is now 2-29 ( 1 < game width < 30 )
+
+	movzx edx, alienCount
+	mov aliens[vector*edx].x, al
+	mov aliens[vector*edx].y, 1
+	inc alienCount
+
+	ret
+spawnAlien endp;-------------------------------------------------\\
+;-----------------------------------------------------------------\\
+
+
+;-----------------------------------------------------------------------------//
+shiftDownBullets proc;-----《 Removes specified element of bullets array》-----//
+	push esi ; esi contains index of element
+
+	dec bulletCount
+	movzx edx, bulletCount
+	cmp edx, 0
+	jne next
+	pop esi
+	ret
+	
+	next:
+		sub edx, esi
+		mov ecx, edx
+		cmp ecx, 0
+		jne shift
+		pop esi
+		ret
+	shift:
+		mov eax, esi
+		inc eax
+
+		mov bl, bullets[vector*eax].x
+		mov bh, bullets[vector*eax].y
+		mov bullets[vector*esi].x, bl
+		mov bullets[vector*esi].y, bh
+
+		inc esi
+		loop shift
+
+	pop esi
+	ret
+shiftDownBullets endp;---------------------------------------------------\\
+;-------------------------------------------------------------------------\\
+
+
+;---------------------------------------------------------------------------//
+shiftDownAliens proc;-----《 Removes specified element of aliens array》-----//
+	push edi ; edi contains index of element
+
+	dec alienCount
+	movzx edx, alienCount
+	cmp edx, 0
+	jne next
+	pop edi
+	ret
+	
+	next:
+		sub edx, edi
+		mov ecx, edx
+		cmp ecx, 0
+		jne shift
+		pop edi
+		ret
+
+	shift:
+		mov eax, edi
+		inc eax
+
+		mov bl, aliens[vector*eax].x
+		mov bh, aliens[vector*eax].y
+		mov aliens[vector*edi].x, bl
+		mov aliens[vector*edi].y, bh
+
+		inc edi
+		loop shift
+
+	pop edi
+	ret
+shiftDownAliens endp;------------------------------------------------------\\
+;---------------------------------------------------------------------------\\
+
+
+;-----------------------------------------------------------------------------//
+checkBulletAlienCollision proc;-----《 Handles bullet alien interaction 》-----//
+	movzx ecx, alienCount
+	cmp ecx, 0
+	jne check
+	ret
+
+	check:
+		mov edi, 0
+		mov esi, 0
+
+		loopAliens:
+			mov al, aliens[vector*edi].x
+			mov ah, aliens[vector*edi].y
+
+			push ecx
+			movzx ecx, bulletCount
+			cmp ecx, 0
+			jne loopBullets
+			pop ecx
+			ret
+
+			loopBullets:
+				mov bl, bullets[vector*esi].x
+				mov bh, bullets[vector*esi].y
+
+				cmp al, bl
+				jne continue
+				cmp ah, bh
+				jge collision			; jge because sometimes both bullet and alien move resulting in no technical overlap
+				continue:
+					inc esi
+					loop loopBullets
+			inc edi
+			backToAlienLoop:
+				mov esi, 0
+				pop ecx
+				loop loopAliens
+			ret
+collision:
+	add score, 10
+	call shiftDownAliens
+	call shiftDownBullets
+	jmp backToAlienLoop
+
+	ret
+checkBulletAlienCollision endp;----------------------------------------------\\
+;-----------------------------------------------------------------------------\\
+
+
+;------------------------------------------------------------------------//
+drawGameOverScreen proc;-----《 Draw the game over screen and exit 》-----//
+	setColor 1
+	mov al, 12
+	mov bl, 12
+	reposition al, bl
+	print "Game Over"
+
+	sub al, 3
+	inc bl
+	reposition al, bl
+	print "Final Score: "
+	printIntExtended score
+
+	sub al, 2
+	inc bl
+	reposition al, bl
+	print "Press enter to exit"
+	call readint
+
+drawGameOverScreen endp;------------------------------------------------\\
+;------------------------------------------------------------------------\\
+
+;◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄◄[-End-]►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►►
+call crlf
+exit
+Main endp
+end main	
